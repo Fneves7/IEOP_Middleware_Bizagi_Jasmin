@@ -63,6 +63,88 @@ app.get('/chave', function(req,res) {
     });
 })
 
+//verificar nif de cliente
+//no postman colocar nif como parametro no body e na value o seu respectivo nif
+//nif - 545192323
+app.post("/verificarnif", function(requesto, resposta) {
+    if (typeof requesto.body.nif === "undefined") {
+        resposta.status(200).json({
+            status: false,
+            message: "Tens de inserir um nif"
+        });
+        return;
+    }
+
+    var nif = requesto.body.nif;
+
+    //Pedir um acces token   
+    request({
+        url: 'https://identity.primaverabss.com/core/connect/token',
+        method: 'POST',
+        auth: {
+            user: appname, // TODO : put your application client id here
+            pass: secret // TODO : put your application client secret here
+        },
+        form: {
+            'grant_type': 'client_credentials',
+            'scope': 'application',
+        }
+    }, function(err, res) {
+        if (res) {
+
+            var json = JSON.parse(res.body);
+            var access_token = json.access_token;
+
+            var url = `http://my.jasminsoftware.com/api/`+ user +`/`+ subscription +`/salescore/customerParties/odata?$filter=CompanyTaxID eq '${nif}'`;
+console.log(url);
+            request({
+                    url: url,
+                    method: "GET",
+                    headers: {
+                        "Authorization": `bearer ${access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    form: {
+                        scope: 'application'
+                    }
+                },
+                function(err, res) {
+
+                    if (err) {
+                        resposta.status(200).json({
+                            status: false,
+                            message: "Tens de inserir um nif"
+                        });
+                        return;
+                    }
+
+                    var json = JSON.parse(res.body);
+
+                    if (json.items.length > 0) {
+                        console.log("Sucesso");
+                        resposta.status(200).json({
+                            status: true,
+                            message: json.items[0].name
+                        });
+                    } else {
+                        resposta.status(200).json({
+                            status: false,
+                            message: "Não existe esse utente"
+                        });
+                    }
+
+                });
+        } else {
+            resposta.status(200).json({
+                status: false,
+                message: "Ocorreu um erro ao fazer o pedido de autenticação"
+            });
+            return;
+        }
+    });
+})
+
+
 //pedido para ver clientes (GET)
 //https://my.jasminsoftware.com/245098/245098-0001/#/salescore/customerParties/list?listname=CustomerParties
 app.get("/customers", function(req,res) {
@@ -194,7 +276,13 @@ app.get("/allitems", function(req,res) {
 
 //api/{tenantKey}/{orgKey}/materialsCore/materialsItems/{itemKey}/extension
 //materialscore/materialsItems/list?listname=MaterialsItems
+
+//TODO: filtrar a resposta json com o resultado e booleano
 app.get("/materials", function(req,res) {
+
+    //itemKey do material
+    var itemKey = req.body.itemKey;
+
     request({
         url: 'https://identity.primaverabss.com/core/connect/token',
         method: 'POST',
@@ -210,8 +298,15 @@ app.get("/materials", function(req,res) {
         if (response) {
             let json = JSON.parse(response.body);
             let access_token = json.access_token;
-            //let url = 'http://my.jasminsoftware.com/api/'+ user +'/'+ subscription +'/materialscore/materialsItems/R11/extension';
-            let url = 'http://my.jasminsoftware.com/api/'+ user +'/'+ subscription +'/materialscore/materialsItems/';
+            let url = 'http://my.jasminsoftware.com/api/'+ user +'/'+ subscription +'/materialscore/materialsItems/'+itemKey+'/extension';
+            //let url = 'http://my.jasminsoftware.com/api/'+ user +'/'+ subscription +'/materialscore/materialsItems/';
+
+            console.log(url);
+
+            var data = response;
+
+            var res = data.map(({status, stockBalance}) => ({status, stockBalance}));
+            console.log(res);
 
             request({
                     url: url,
