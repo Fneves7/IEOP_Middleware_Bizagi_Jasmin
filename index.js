@@ -1,13 +1,18 @@
+const fs = require('fs');
 const express = require("express");
 const request = require('request');
-const app = express();
+const readline = require('readline');
+const { google } = require('googleapis');
+const moment = require('moment');
 
+const app = express();
+const PORT = 3000;
 //Wildcards
 // Test subscription
 // const user = '244121';
 // const subscription = '244121-0001';
-// const  appname = 'TESTE2344';
-// const  secret = 'b23d3e6d-0ae6-41e0-bd63-5e0a99ae75cb';
+// const appname = 'TESTE2344';
+// const secret = 'b23d3e6d-0ae6-41e0-bd63-5e0a99ae75cb';
 
 //Subscription
 const user = '246568';
@@ -17,10 +22,17 @@ const subscription = '246568-0001';
 const appname = 'IEOP2021';
 const secret = '8fc6bbb6-3da0-4e57-8d11-aaefd1e4db6f';
 
+const GOOGLE_SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
+const GOOGLE_REPAIRS_CALENDAR = 'pte14c0njg915aq8hdbqi1lm98@group.calendar.google.com';
+const GOOGLE_TOKEN_PATH = 'token.json';
+
+const PRIMAVERA_BASE_URL = `http://my.jasminsoftware.com/api/${user}/${subscription}`;
+
+let googleOAuth2Client;
+
 //Server
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-const PORT = 3000;
 
 //Rota primária - Indicar que a api está a funcionar
 app.get("/", function (req, res) {
@@ -61,8 +73,54 @@ app.get('/chave', function (req, res) {
 			console.log("Could not obtain access token.");
 		}
 	});
-})
+});
 
+app.get('/pickupAvailability', (req, res) => {
+	if (dateString = req.query.datetime) {
+		// TODO Check if strict mode can be used for the date
+		const momentdate = moment(dateString, "MM/DD/YYYY hh:mm:ss A");
+		const startStamp = momentdate.format("YYYY-MM-DDTHH:mm:ssZ");
+		const finishStamp = momentdate.add(1, 'hours').format("YYYY-MM-DDTHH:mm:ssZ");
+
+		getCalendarData(startStamp, finishStamp).then((data) => {
+			const calLength = data.calendars[GOOGLE_REPAIRS_CALENDAR].busy.length;
+			if (calLength) {
+				res.status(200).json({
+					available: false
+				})
+			} else {
+				res.status(200).json({
+					available: true
+				})
+			}
+		}).catch((err) => {
+			res.status(500).json({
+				status: false,
+				message: "The query to the Calendar API failed"
+			});
+		});
+	} else {
+		res.status(400).json({
+			status: false,
+			message: "The endpoint requires a date query param to verify availability"
+		});
+	}
+});
+
+async function getCalendarData(startStamp, finishStamp) {
+	// GCal expects parameters to be formatted per RFC3339 date norm
+	const calendar = google.calendar({ version: 'v3', auth: getOAuth2Client() });
+
+	const queryResponse = await calendar.freebusy.query({
+		requestBody: {
+			"items": [{ "id" : GOOGLE_REPAIRS_CALENDAR }],
+			"timeMin": startStamp,
+			"timeMax": finishStamp
+		}
+	});
+
+	return queryResponse.data;
+}
 //verificar nif de cliente
 //no postman colocar nif como parametro no body e na value o seu respectivo nif
 //nif - 545192323
@@ -647,10 +705,60 @@ app.post("/createencomenda", function (request) {
 
 });
 
+function setOAuth2Client(auth) {
+	googleOAuth2Client = auth;
+}
+
+function getOAuth2Client() {
+	return googleOAuth2Client;
+}
+
+function authorize(credentials, callback) {
+	const { client_secret, client_id, redirect_uris } = credentials.installed;
+	const oAuth2Client = new google.auth.OAuth2(
+		client_id, client_secret, redirect_uris[0]);
+
+	// Check if we have previously stored a token.
+	fs.readFile(GOOGLE_TOKEN_PATH, (err, token) => {
+		if (err) return getAccessToken(oAuth2Client, callback);
+		oAuth2Client.setCredentials(JSON.parse(token));
+		callback(oAuth2Client);
+	});
+}
+
+function getAccessToken(oAuth2Client, callback) {
+	const authUrl = oAuth2Client.generateAuthUrl({
+		access_type: 'offline',
+		scope: GOOGLE_SCOPES,
+	});
+	console.log('Authorize this app by visiting this url:', authUrl);
+	const rl = readline.createInterface({
+		input: process.stdin,
+		output: process.stdout,
+	});
+	rl.question('Enter the code from that page here: ', (code) => {
+		rl.close();
+		oAuth2Client.getToken(code, (err, token) => {
+			if (err) return console.error('Error retrieving access token', err);
+			oAuth2Client.setCredentials(token);
+			// Store the token to disk for later program executions
+			fs.writeFile(GOOGLE_TOKEN_PATH, JSON.stringify(token), (err) => {
+				if (err) return console.error(err);
+				console.log('Token stored to', GOOGLE_TOKEN_PATH);
+			});
+			callback(oAuth2Client);
+		});
+	});
+}
 
 //Iniciar middleware
 app.listen(PORT, function () {
 	console.log("Middleware iniciado. A escutar o porto: " + PORT);
+	// Inicializar a Google API, criando uma instancia do OAuth2Client
+	fs.readFile('credentials.json', (err, content) => {
+		if (err) return console.log('Error loading client secret file:', err);
+		authorize(JSON.parse(content), setOAuth2Client);
+	});
 })
 
 
