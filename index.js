@@ -66,88 +66,6 @@ app.get('/pickupAvailability', (req, res) => {
     }
 });
 
-//METHOD:GET->GETSTOCK
-app.get("/get_stock", function (requesto, resposta) {
-    if (typeof requesto.body.itemKey === "undefined") {
-        resposta.status(400).json({
-            status: false,
-            message: "itemKey inválido"
-        });
-        return;
-    }
-    var itemKey = requesto.body.itemKey;
-
-    //Pedir um acces token
-    request({
-        url: 'https://identity.primaverabss.com/core/connect/token',
-        method: 'POST',
-        auth: {
-            user: appname, // TODO : put your application client id here
-            pass: secret // TODO : put your application client secret here
-        },
-        form: {
-            'grant_type': 'client_credentials',
-            'scope': 'application',
-        }
-    }, function (err, res) {
-        if (res) {
-            var json = JSON.parse(res.body);
-            var access_token = json.access_token;
-            var url = `${PRIMAVERA_BASE_URL}/materialscore/materialsItems/` + itemKey + `/extension`;
-
-            request({
-                    url: url,
-                    method: "GET",
-                    headers: {
-                        "Authorization": `bearer ${access_token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    form: {
-                        scope: 'application'
-                    }
-                },
-                function (err, res) {
-                    if (err) {
-                        resposta.status(400).json({
-                            status: false,
-                            message: "Inserir itemKey"
-                        });
-                        return;
-                    }
-                    var json = JSON.parse(res.body);
-                    var wharehouse = json.materialsItemWarehouses
-                    if (json) {
-                        //foreach dos armazéns
-                        json.materialsItemWarehouses.forEach(element => {
-                            if (element.stockBalance > 0) {
-                                resposta.status(200).json({
-                                    status: true,
-                                    message: {"Armazém": element.warehouse, "Stock": element.stockBalance}
-                                });
-                            }/*else{
-								resposta.status(200).json({
-									status: true,
-									//message: {"Armazém": element.warehouse, "Stock": element.stockBalance}
-								});
-							}*/
-                        });
-                    } else {
-                        resposta.status(404).json({
-                            status: false,
-                            message: "Inexistente"
-                        });
-                    }
-                });
-        } else {
-            resposta.status(400).json({
-                status: false,
-                message: "Ocorreu um erro ao fazer o pedido de autenticação"
-            });
-            return;
-        }
-    });
-})
-
 //METHOD:POST->CREATEBUDGET
 app.post("/create_budget", function (requesto, resposta) {
     // Validacoes nos pedidos
@@ -631,12 +549,98 @@ function getAccessToken(oAuth2Client, callback) {
     });
 }
 
+
+//METHOD:getstock testes
+app.get("/get_stock", function (requesto, resposta) {
+    var comp = requesto.body.components;
+    var filter = `ItemKey eq '${comp[0].itemKey}'`;
+    if(comp.length > 1){
+        for(let i=1; i < comp.length; i++) {
+            filter += ` or ItemKey eq '${comp[i].itemKey}'`;
+        }
+    }
+
+    //Pedir um acces token
+    request({
+        url: 'https://identity.primaverabss.com/core/connect/token',
+        method: 'POST',
+        auth: {
+            user: appname,
+            pass: secret
+        },
+        form: {
+            'grant_type': 'client_credentials',
+            'scope': 'application',
+        }
+    }, function (err, res) {
+        if (res) {
+            var json = JSON.parse(res.body);
+            var access_token = json.access_token;
+
+            var url = `${PRIMAVERA_BASE_URL}/materialscore/materialsItems/odata?$filter=${filter}`;
+            request({
+                    url: url,
+                    method: "GET",
+                    headers: {
+                        "Authorization": `bearer ${access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    form: {
+                        scope: 'application'
+                    }
+                },
+                function (err, res) {
+                    if (err) {
+                        resposta.status(400).json({
+                            status: false,
+                            message: "Inserir itemKey"
+                        });
+                        return;
+                    }
+                    var json = JSON.parse(res.body);
+                    var output;
+                    if (json) {
+                        const semStock = json.items.filter((element) => element.materialsItemWarehouses[2].stockBalance === 0);
+                        var filt = '';
+                        if (semStock.length > 0){
+                            semStock.forEach(element =>{
+                                    filt += `${element.itemKey} - ${element.description} sem stock! \n`;
+                            });
+
+                            resposta.status(200).json({
+                                status: false,
+                                message: filt
+                            });
+                        }else {
+                            output = '';
+                            resposta.status(200).json({
+                                status: true,
+                                message: output
+                            });
+                        }
+                    } else {
+                        resposta.status(404).json({
+                            status: false,
+                            message: "Inexistente"
+                        });
+                    }
+                });
+        } else {
+            resposta.status(400).json({
+                status: false,
+                message: "Ocorreu um erro ao fazer o pedido de autenticação"
+            });
+            return;
+        }
+    });
+})
+
 //Iniciar middleware
 app.listen(PORT, function () {
     console.log("Middleware iniciado. A escutar o porto: " + PORT);
     // Inicializar a Google API, criando uma instancia do OAuth2Client
-    // fs.readFile('credentials.json', (err, content) => {
-    // 	if (err) return console.log('Error loading client secret file:', err);
-    // 	authorize(JSON.parse(content), setOAuth2Client);
-    // });
+    fs.readFile('credentials.json', (err, content) => {
+    	if (err) return console.log('Error loading client secret file:', err);
+    	authorize(JSON.parse(content), setOAuth2Client);
+    });
 })

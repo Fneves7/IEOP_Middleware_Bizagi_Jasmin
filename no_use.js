@@ -23,6 +23,94 @@ app.get("/", function (req, res) {
 	})
 })
 
+//METHOD:GET->GETSTOCK
+//output do armazem e stock
+app.get("/get_stock", function (requesto, resposta) {
+	if (typeof requesto.body.itemKey === "undefined") {
+		resposta.status(400).json({
+			status: false,
+			message: "itemKey inválido"
+		});
+		return;
+	}
+	var itemKey = requesto.body.itemKey;
+
+	//Pedir um acces token
+	request({
+		url: 'https://identity.primaverabss.com/core/connect/token',
+		method: 'POST',
+		auth: {
+			user: appname, // TODO : put your application client id here
+			pass: secret // TODO : put your application client secret here
+		},
+		form: {
+			'grant_type': 'client_credentials',
+			'scope': 'application',
+		}
+	}, function (err, res) {
+		if (res) {
+			var json = JSON.parse(res.body);
+			var access_token = json.access_token;
+			//pegar só num produto
+			var url = `${PRIMAVERA_BASE_URL}/materialscore/materialsItems/${itemKey}`;
+			// var url = `${PRIMAVERA_BASE_URL}/materialscore/materialsItems/odata?$filter=ItemKey eq 'A12' or ItemKey eq 'A13'`;
+			request({
+					url: url,
+					method: "GET",
+					headers: {
+						"Authorization": `bearer ${access_token}`,
+						'Content-Type': 'application/json'
+					},
+					form: {
+						scope: 'application'
+					}
+				},
+				function (err, res) {
+					if (err) {
+						resposta.status(400).json({
+							status: false,
+							message: "Inserir itemKey"
+						});
+						return;
+					}
+					var json = JSON.parse(res.body);
+					var warehouse = json.materialsItemWarehouses
+					if (json) {
+
+						// foreach dos armazéns
+						json.materialsItemWarehouses.forEach(element => {
+							if (element.stockBalance) {
+								resposta.status(200).json({
+									status: true,
+									message: {
+										"Armazém": element.warehouse,
+										"Stock": element.stockBalance
+									}
+								});
+							}/*else{
+								resposta.status(200).json({
+									status: true,
+									//message: {"Armazém": element.warehouse, "Stock": element.stockBalance}
+								});
+							}*/
+						});
+					} else {
+						resposta.status(404).json({
+							status: false,
+							message: "Inexistente"
+						});
+					}
+				});
+		} else {
+			resposta.status(400).json({
+				status: false,
+				message: "Ocorreu um erro ao fazer o pedido de autenticação"
+			});
+			return;
+		}
+	});
+})
+
 //GET KEY
 app.get('/chave', function (req, res) {
 	request({
