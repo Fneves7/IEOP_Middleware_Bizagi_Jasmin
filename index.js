@@ -34,6 +34,7 @@ app.get("/", function (req, res) {
     })
 })
 
+//METHOD:GET->Quotation (Orçamento)
 app.get('/quotation', (req, res) => {
     var components = req.body.components;
     var services = req.body.services;
@@ -68,7 +69,7 @@ app.get('/quotation', (req, res) => {
                 var url = `${PRIMAVERA_BASE_URL}/sales/quotations`;
                 var body = {
                     "company": "REPAIRMASTERS",
-                    "buyerCustomerParty": "0001",
+                    "buyerCustomerParty": "INDIF",
                     "documentDate": dateTimeFormatted,
                     "documentLines": salesItems
                 };
@@ -138,6 +139,7 @@ app.get('/quotation', (req, res) => {
         });
 })
 
+//Ficheiro do orcamento
 app.get('/files', (req, res) => {
     const filename = req.query.filename;
     res.sendFile(__dirname + `/public/${filename}`);
@@ -176,7 +178,7 @@ app.get('/pickupAvailability', (req, res) => {
     }
 });
 
-//METHOD:GETSTOCK
+//METHOD:GETSTOCK Obter stocks de produtos
 app.get("/get_stock", function (requesto, resposta) {
     var comp = requesto.body.components;
     var filter = `ItemKey eq '${comp[0].itemKey}'`;
@@ -259,7 +261,7 @@ app.get("/get_stock", function (requesto, resposta) {
     });
 })
 
-//METHOD:POST CREATEINVOICE
+//METHOD:POST CREATEINVOICE (Fatura)
 app.post("/create_invoice", function (requesto, resposta) {
     // Validacoes nos pedidos
     if (typeof requesto.body.salesItem === "undefined") {
@@ -283,6 +285,11 @@ app.post("/create_invoice", function (requesto, resposta) {
         });
         return;
     }
+
+    var components = req.body.components;
+    var services = req.body.services;
+
+    const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
 
     var salesItem = requesto.body.salesItem;
     var buyerCustomerParty = requesto.body.buyerCustomerParty;
@@ -311,7 +318,7 @@ app.post("/create_invoice", function (requesto, resposta) {
             var body = {
                 "company": "REPAIRMASTERS",
                 "documentType": "FA",
-                "buyerCustomerParty": buyerCustomerParty,
+                "buyerCustomerParty": "INDIF",
                 "emailTo": emailTo,
                 "documentDate": dateTimeFormatted,
                 "documentLines": [{"salesItem": salesItem}]
@@ -357,7 +364,7 @@ app.post("/create_invoice", function (requesto, resposta) {
     });
 })
 
-//METHOD:POST CREATEORDER
+//METHOD:POST CREATEORDER (Encomendas)
 app.post("/create_order", function (requesto, resposta) {
     // Validacoes nos pedidos
     if (typeof requesto.body.salesItem === "undefined") {
@@ -382,7 +389,7 @@ app.post("/create_order", function (requesto, resposta) {
         return;
     }
 
-    var salesItem = requesto.body.salesItem;
+    var salesItem = requesto.body.salesItem; console.log(salesItem)
     var buyerCustomerParty = requesto.body.buyerCustomerParty;
     var emailTo = requesto.body.emailTo;
     //data e converter para rfc3339
@@ -466,7 +473,7 @@ app.post("/create_order", function (requesto, resposta) {
     });
 })
 
-//METHOD:POST CREATEGT
+//METHOD:POST CREATEGT (guias de transporte)
 //Metodo funcional, mas nao permite processeguir pois precisa de comunicar a AT
 //message: 'Your credentials for communicating with the Tax Authority are incomplete. Please enter the missing details in taxes setup.'
 app.post("/create_gt", function (requesto, resposta) {
