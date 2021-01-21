@@ -1,0 +1,15 @@
+{
+    "components": [
+        {
+            "itemKey": "A01",
+            "description": "Produto iPhone"
+        }
+    ],
+    "services": [
+        {
+            "itemKey": "S03",
+            "description": ""
+        }
+    ],
+    "billedHours" : 300
+}
