@@ -35,13 +35,13 @@ app.get("/", function (req, res) {
 })
 
 //METHOD:GET->Quotation (Orçamento)
-app.get('/quotation', (req, res) => {
+app.post('/quotation', (req, res) => {
     var components = req.body.components;
     var services = req.body.services;
     var billedHours = req.body.billedHours;
 
-    const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
-    const serv = services.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
+    const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
+    const serv = services.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
     serv.push({"salesItem": 'S1', "quantity": billedHours});
     var salesItems = [...comp, ...serv];
 
@@ -73,7 +73,6 @@ app.get('/quotation', (req, res) => {
                     "documentDate": dateTimeFormatted,
                     "documentLines": salesItems
                 };
-                console.log(body)
                 request({
                         url: url,
                         method: "POST",
@@ -93,9 +92,7 @@ app.get('/quotation', (req, res) => {
                             return;
                         }
                         if (body) {
-                            console.log(body)
                             url = `${PRIMAVERA_BASE_URL}/sales/quotations/${body}/print`;
-                            console.log(url)
                             json = JSON.parse(response.body);
                             access_token = json.access_token;
                             const filename = `ORC_${moment().unix()}.pdf`;
@@ -139,7 +136,7 @@ app.get('/quotation', (req, res) => {
         });
 })
 
-//Ficheiro do orcamento
+//Imprimir documentos no servidor
 app.get('/files', (req, res) => {
     const filename = req.query.filename;
     res.sendFile(__dirname + `/public/${filename}`);
@@ -179,7 +176,7 @@ app.get('/pickupAvailability', (req, res) => {
 });
 
 //METHOD:GETSTOCK Obter stocks de produtos
-app.get("/get_stock", function (requesto, resposta) {
+app.post("/get_stock", function (requesto, resposta) {
     var comp = requesto.body.components;
     var filter = `ItemKey eq '${comp[0].itemKey}'`;
     if (comp.length > 1) {
@@ -187,7 +184,6 @@ app.get("/get_stock", function (requesto, resposta) {
             filter += ` or ItemKey eq '${comp[i].itemKey}'`;
         }
     }
-
     //Pedir um acces token
     request({
         url: 'https://identity.primaverabss.com/core/connect/token',
@@ -262,38 +258,16 @@ app.get("/get_stock", function (requesto, resposta) {
 })
 
 //METHOD:POST CREATEINVOICE (Fatura)
-app.post("/create_invoice", function (requesto, resposta) {
-    // Validacoes nos pedidos
-    if (typeof requesto.body.salesItem === "undefined") {
-        resposta.status(400).json({
-            status: false,
-            message: "salesItem inválido: " + requesto.body.salesItem
-        });
-        return;
-    }
-    if (typeof requesto.body.buyerCustomerParty === "undefined") {
-        resposta.status(400).json({
-            status: false,
-            message: "buyerCustomerParty inválido: " + requesto.body.buyerCustomerParty
-        });
-        return;
-    }
-    if (typeof requesto.body.emailTo === "undefined") {
-        resposta.status(400).json({
-            status: false,
-            message: "emailTo inválido: " + requesto.body.emailTo
-        });
-        return;
-    }
-
+app.post("/create_invoice", function (req, res) {
     var components = req.body.components;
     var services = req.body.services;
+    var billedHours = req.body.billedHours;
 
-    const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
+    const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
+    const serv = services.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
+    serv.push({"salesItem": 'S1', "quantity": billedHours});
+    var salesItems = [...comp, ...serv];
 
-    var salesItem = requesto.body.salesItem;
-    var buyerCustomerParty = requesto.body.buyerCustomerParty;
-    var emailTo = requesto.body.emailTo;
     //data e converter para rfc3339
     var dateTime = new Date();
     var dateTimeFormatted = dateTime.toISOString();
@@ -303,25 +277,24 @@ app.post("/create_invoice", function (requesto, resposta) {
         url: 'https://identity.primaverabss.com/core/connect/token',
         method: 'POST',
         auth: {
-            user: appname, // TODO : put your application client id here
-            pass: secret // TODO : put your application client secret here
+            user: appname,
+            pass: secret
         },
         form: {
             'grant_type': 'client_credentials',
             'scope': 'application',
         }
-    }, function (err, res) {
-        if (res) {
-            var json = JSON.parse(res.body);
+    }, function (err, response) {
+        if (response) {
+            var json = JSON.parse(response.body);
             var access_token = json.access_token;
-            var url = `${PRIMAVERA_BASE_URL}/billing/invoices`;
+            var url = `${PRIMAVERA_BASE_URL}/billing/invoices/`;
             var body = {
                 "company": "REPAIRMASTERS",
                 "documentType": "FA",
                 "buyerCustomerParty": "INDIF",
-                "emailTo": emailTo,
                 "documentDate": dateTimeFormatted,
-                "documentLines": [{"salesItem": salesItem}]
+                "documentLines": salesItems
             };
             request({
                     url: url,
@@ -333,29 +306,51 @@ app.post("/create_invoice", function (requesto, resposta) {
                     json: true,
                     body: body
                 },
-                function (err, res, body) {
+                function (err, resp, body) {
                     if (err) {
-                        resposta.status(400).json({
+                        res.status(400).json({
                             status: false,
                             message: "Dados inválidos"
                         });
                         return;
                     }
-
                     if (body) {
-                        resposta.status(201).json({
-                            status: true,
-                            message: body
-                        });
+                        urlprint = `${PRIMAVERA_BASE_URL}/billing/invoices/${body}/print`;
+                        json = JSON.parse(response.body);
+                        access_token = json.access_token;
+                        const filename = `FA_${moment().unix()}.pdf`;
+                        const filepath = `./public/${filename}`;
+                        let file = fs.createWriteStream(filepath);
+
+                        request({
+                            uri: urlprint,
+                            headers: {
+                                'Authorization': `bearer ${access_token}`,
+                                'Accept-Encoding': 'gzip, deflate, br',
+                                'Cache-Control': 'max-age=0',
+                                'Connection': 'keep-alive',
+                                'Upgrade-Insecure-Requests': '1',
+                            },
+                        })
+                            .pipe(file)
+                            .on('finish', () => {
+                                res.status(200).json({
+                                    link: `http://localhost:3000/files?filename=${filename}`
+                                })
+                            })
+                            .on('error', (error) => {
+                                console.log(error)
+                                res.status(500).json({})
+                            })
                     } else {
-                        resposta.status(400).json({
+                        res.status(400).json({
                             status: false,
                             message: "Bad Request"
                         });
                     }
                 });
         } else {
-            resposta.status(400).json({
+            res.status(400).json({
                 status: false,
                 message: "Ocorreu um erro ao fazer o pedido de autenticação"
             });
@@ -389,7 +384,7 @@ app.post("/create_order", function (requesto, resposta) {
         return;
     }
 
-    var salesItem = requesto.body.salesItem; console.log(salesItem)
+    var salesItem = requesto.body.salesItem;
     var buyerCustomerParty = requesto.body.buyerCustomerParty;
     var emailTo = requesto.body.emailTo;
     //data e converter para rfc3339
@@ -571,7 +566,6 @@ app.post("/create_gt", function (requesto, resposta) {
                             status: true,
                             message: body
                         });
-                        console.log(body);
                     } else {
                         resposta.status(400).json({
                             status: false,
@@ -610,7 +604,7 @@ app.post('/email', (req, res) => {
         text: `${link}`
     };
 
-    transporter.sendMail(mailOptions, function(error, info){
+    transporter.sendMail(mailOptions, function (error, info) {
         if (error) {
             console.log(error);
         } else {
@@ -686,6 +680,7 @@ function getAccessToken(oAuth2Client, callback) {
 
 //Iniciar middleware
 app.listen(PORT, function () {
+    console.clear();
     console.log("Middleware iniciado. A escutar o porto: " + PORT);
     // Inicializar a Google API, criando uma instancia do OAuth2Client
     // fs.readFile('credentials.json', (err, content) => {
