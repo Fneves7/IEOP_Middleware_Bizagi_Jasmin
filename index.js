@@ -2,6 +2,7 @@ const fs = require('fs');
 const express = require("express");
 const request = require('request');
 const readline = require('readline');
+const nodemailer = require('nodemailer');
 const {google} = require('googleapis');
 const moment = require('moment');
 const app = express();
@@ -31,6 +32,115 @@ app.get("/", function (req, res) {
         status: true,
         message: "Sucess"
     })
+})
+
+app.get('/quotation', (req, res) => {
+    var components = req.body.components;
+    var services = req.body.services;
+    var billedHours = req.body.billedHours;
+
+    const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
+    const serv = services.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
+    serv.push({"salesItem": 'S1', "quantity": billedHours});
+    var salesItems = [...comp, ...serv];
+
+    request({
+            url: 'https://identity.primaverabss.com/core/connect/token',
+            method: 'POST',
+            auth: {
+                user: appname, // TODO : put your application client id here
+                pass: secret // TODO : put your application client secret here
+            },
+            form: {
+                'grant_type': 'client_credentials',
+                'scope': 'application',
+            }
+        },
+        (err, response) => {
+            if (response) {
+                var salesItem = req.body.itemKey;
+                var buyerCustomerParty = req.body.buyerCustomerParty;
+                //data e converter para rfc3339
+                var dateTime = new Date();
+                var dateTimeFormatted = dateTime.toISOString();
+                var json = JSON.parse(response.body);
+                var access_token = json.access_token;
+                var url = `${PRIMAVERA_BASE_URL}/sales/quotations`;
+                var body = {
+                    "company": "REPAIRMASTERS",
+                    "buyerCustomerParty": "0001",
+                    "documentDate": dateTimeFormatted,
+                    "documentLines": salesItems
+                };
+                console.log(body)
+                request({
+                        url: url,
+                        method: "POST",
+                        headers: {
+                            "Authorization": `bearer ${access_token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        json: true,
+                        body: body
+                    },
+                    function (err, resp, body) {
+                        if (err) {
+                            res.status(400).json({
+                                status: false,
+                                message: "Dados inválidos"
+                            });
+                            return;
+                        }
+                        if (body) {
+                            console.log(body)
+                            url = `${PRIMAVERA_BASE_URL}/sales/quotations/${body}/print`;
+                            console.log(url)
+                            json = JSON.parse(response.body);
+                            access_token = json.access_token;
+                            const filename = `ORC_${moment().unix()}.pdf`;
+                            const filepath = `./public/${filename}`;
+                            let file = fs.createWriteStream(filepath);
+
+                            request({
+                                uri: url,
+                                headers: {
+                                    'Authorization': `bearer ${access_token}`,
+                                    'Accept-Encoding': 'gzip, deflate, br',
+                                    'Cache-Control': 'max-age=0',
+                                    'Connection': 'keep-alive',
+                                    'Upgrade-Insecure-Requests': '1',
+                                },
+                            })
+                                .pipe(file)
+                                .on('finish', () => {
+                                    res.status(200).json({
+                                        link: `http://localhost:3000/files?filename=${filename}`
+                                    })
+                                })
+                                .on('error', (error) => {
+                                    console.log(error);
+                                    res.status(500).json({})
+                                })
+                        } else {
+                            res.status(400).json({
+                                status: false,
+                                message: "Bad Request"
+                            });
+                        }
+                    });
+            } else {
+                res.status(400).json({
+                    status: false,
+                    message: "Ocorreu um erro ao fazer o pedido de autenticação"
+                });
+                return;
+            }
+        });
+})
+
+app.get('/files', (req, res) => {
+    const filename = req.query.filename;
+    res.sendFile(__dirname + `/public/${filename}`);
 })
 
 //METHOD:GET->Google calendar
@@ -66,45 +176,23 @@ app.get('/pickupAvailability', (req, res) => {
     }
 });
 
-//METHOD:POST->CREATEBUDGET
-app.post("/create_budget", function (requesto, resposta) {
-    // Validacoes nos pedidos
-    if (typeof requesto.body.salesItem === "undefined") {
-        resposta.status(400).json({
-            status: false,
-            message: "salesItem inválido: " + requesto.body.salesItem
-        });
-        return;
+//METHOD:GETSTOCK
+app.get("/get_stock", function (requesto, resposta) {
+    var comp = requesto.body.components;
+    var filter = `ItemKey eq '${comp[0].itemKey}'`;
+    if (comp.length > 1) {
+        for (let i = 1; i < comp.length; i++) {
+            filter += ` or ItemKey eq '${comp[i].itemKey}'`;
+        }
     }
-    if (typeof requesto.body.buyerCustomerParty === "undefined") {
-        resposta.status(400).json({
-            status: false,
-            message: "buyerCustomerParty inválido: " + requesto.body.buyerCustomerParty
-        });
-        return;
-    }
-    if (typeof requesto.body.emailTo === "undefined") {
-        resposta.status(400).json({
-            status: false,
-            message: "emailTo inválido: " + requesto.body.emailTo
-        });
-        return;
-    }
-
-    var salesItem = requesto.body.salesItem;
-    var buyerCustomerParty = requesto.body.buyerCustomerParty;
-    var emailTo = requesto.body.emailTo;
-    //data e converter para rfc3339
-    var dateTime = new Date();
-    var dateTimeFormatted = dateTime.toISOString();
 
     //Pedir um acces token
     request({
         url: 'https://identity.primaverabss.com/core/connect/token',
         method: 'POST',
         auth: {
-            user: appname, // TODO : put your application client id here
-            pass: secret // TODO : put your application client secret here
+            user: appname,
+            pass: secret
         },
         form: {
             'grant_type': 'client_credentials',
@@ -114,43 +202,50 @@ app.post("/create_budget", function (requesto, resposta) {
         if (res) {
             var json = JSON.parse(res.body);
             var access_token = json.access_token;
-            var url = `${PRIMAVERA_BASE_URL}/sales/quotations`;
-            var body = {
-                "company": "REPAIRMASTERS",
-                "emailTo": emailTo,
-                "buyerCustomerParty": buyerCustomerParty,
-                "documentDate": dateTimeFormatted,
-                "documentLines": [
-                    {"salesItem": salesItem}]
-            };
+            var url = `${PRIMAVERA_BASE_URL}/materialscore/materialsItems/odata?$filter=${filter}`;
             request({
                     url: url,
-                    method: "POST",
+                    method: "GET",
                     headers: {
                         "Authorization": `bearer ${access_token}`,
                         'Content-Type': 'application/json'
                     },
-                    json: true,
-                    body: body
+                    form: {
+                        scope: 'application'
+                    }
                 },
-                function (err, res, body) {
+                function (err, res) {
                     if (err) {
                         resposta.status(400).json({
                             status: false,
-                            message: "Dados inválidos"
+                            message: "Inserir itemKey"
                         });
                         return;
                     }
+                    var json = JSON.parse(res.body);
+                    var output = '';
+                    if (json) {
+                        const semStock = json.items.filter((element) => element.materialsItemWarehouses[2].stockBalance === 0);
+                        var filt = '';
+                        if (semStock.length > 0) {
+                            semStock.forEach(element => {
+                                filt += `${element.itemKey} - ${element.description} sem stock! \n`;
+                            });
 
-                    if (body) {
-                        resposta.status(201).json({
-                            status: true,
-                            message: body
-                        });
+                            resposta.status(200).json({
+                                status: false,
+                                message: filt
+                            });
+                        } else {
+                            resposta.status(200).json({
+                                status: true,
+                                message: output
+                            });
+                        }
                     } else {
-                        resposta.status(400).json({
+                        resposta.status(404).json({
                             status: false,
-                            message: "Bad Request"
+                            message: "Inexistente"
                         });
                     }
                 });
@@ -487,6 +582,39 @@ app.post("/create_gt", function (requesto, resposta) {
     });
 })
 
+//email
+app.post('/email', (req, res) => {
+    const emailType = req.query.emailType;
+    const customerEmail = req.body.emailTo;
+    const link = req.body.link;
+
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: 'ieoprepairmasters@gmail.com',
+            pass: '@vH6@Ps56kH2Vt'
+        }
+    });
+
+    const mailOptions = {
+        from: 'ieoprepairmasters@gmail.com',
+        to: `${customerEmail}`,
+        subject: `${emailType} de Reparação`,
+        text: `${link}`
+    };
+
+    transporter.sendMail(mailOptions, function(error, info){
+        if (error) {
+            console.log(error);
+        } else {
+            res.status(200).json({
+                message: "Email successfully sent!"
+            })
+            console.log('Email sent: ' + info.response);
+        }
+    });
+});
+
 //GETCALENDAR
 async function getCalendarData(startStamp, finishStamp) {
     // GCal expects parameters to be formatted per RFC3339 date norm
@@ -549,98 +677,12 @@ function getAccessToken(oAuth2Client, callback) {
     });
 }
 
-
-//METHOD:getstock testes
-app.get("/get_stock", function (requesto, resposta) {
-    var comp = requesto.body.components;
-    var filter = `ItemKey eq '${comp[0].itemKey}'`;
-    if(comp.length > 1){
-        for(let i=1; i < comp.length; i++) {
-            filter += ` or ItemKey eq '${comp[i].itemKey}'`;
-        }
-    }
-
-    //Pedir um acces token
-    request({
-        url: 'https://identity.primaverabss.com/core/connect/token',
-        method: 'POST',
-        auth: {
-            user: appname,
-            pass: secret
-        },
-        form: {
-            'grant_type': 'client_credentials',
-            'scope': 'application',
-        }
-    }, function (err, res) {
-        if (res) {
-            var json = JSON.parse(res.body);
-            var access_token = json.access_token;
-
-            var url = `${PRIMAVERA_BASE_URL}/materialscore/materialsItems/odata?$filter=${filter}`;
-            request({
-                    url: url,
-                    method: "GET",
-                    headers: {
-                        "Authorization": `bearer ${access_token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    form: {
-                        scope: 'application'
-                    }
-                },
-                function (err, res) {
-                    if (err) {
-                        resposta.status(400).json({
-                            status: false,
-                            message: "Inserir itemKey"
-                        });
-                        return;
-                    }
-                    var json = JSON.parse(res.body);
-                    var output;
-                    if (json) {
-                        const semStock = json.items.filter((element) => element.materialsItemWarehouses[2].stockBalance === 0);
-                        var filt = '';
-                        if (semStock.length > 0){
-                            semStock.forEach(element =>{
-                                    filt += `${element.itemKey} - ${element.description} sem stock! \n`;
-                            });
-
-                            resposta.status(200).json({
-                                status: false,
-                                message: filt
-                            });
-                        }else {
-                            output = '';
-                            resposta.status(200).json({
-                                status: true,
-                                message: output
-                            });
-                        }
-                    } else {
-                        resposta.status(404).json({
-                            status: false,
-                            message: "Inexistente"
-                        });
-                    }
-                });
-        } else {
-            resposta.status(400).json({
-                status: false,
-                message: "Ocorreu um erro ao fazer o pedido de autenticação"
-            });
-            return;
-        }
-    });
-})
-
 //Iniciar middleware
 app.listen(PORT, function () {
     console.log("Middleware iniciado. A escutar o porto: " + PORT);
     // Inicializar a Google API, criando uma instancia do OAuth2Client
-    fs.readFile('credentials.json', (err, content) => {
-    	if (err) return console.log('Error loading client secret file:', err);
-    	authorize(JSON.parse(content), setOAuth2Client);
-    });
+    // fs.readFile('credentials.json', (err, content) => {
+    // 	if (err) return console.log('Error loading client secret file:', err);
+    // 	authorize(JSON.parse(content), setOAuth2Client);
+    // });
 })
