@@ -2,6 +2,7 @@ const fs = require('fs');
 const express = require("express");
 const request = require('request');
 const readline = require('readline');
+const nodemailer = require('nodemailer');
 const {google} = require('googleapis');
 const moment = require('moment');
 const app = express();
@@ -580,6 +581,39 @@ app.post("/create_gt", function (requesto, resposta) {
         }
     });
 })
+
+//email
+app.post('/email', (req, res) => {
+    const emailType = req.query.emailType;
+    const customerEmail = req.body.emailTo;
+    const link = req.body.link;
+
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: 'ieoprepairmasters@gmail.com',
+            pass: '@vH6@Ps56kH2Vt'
+        }
+    });
+
+    const mailOptions = {
+        from: 'ieoprepairmasters@gmail.com',
+        to: `${customerEmail}`,
+        subject: `${emailType} de Reparação`,
+        text: `${link}`
+    };
+
+    transporter.sendMail(mailOptions, function(error, info){
+        if (error) {
+            console.log(error);
+        } else {
+            res.status(200).json({
+                message: "Email successfully sent!"
+            })
+            console.log('Email sent: ' + info.response);
+        }
+    });
+});
 
 //GETCALENDAR
 async function getCalendarData(startStamp, finishStamp) {
