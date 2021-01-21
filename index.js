@@ -34,14 +34,14 @@ app.get("/", function (req, res) {
     })
 })
 
-app.get('/quotation', (req, res) => {
+app.post('/quotation', (req, res) => {
     var components = req.body.components;
-    var services = req.body.services;
     var billedHours = req.body.billedHours;
+    var services = req.body.services;
+    services.push({"itemKey": 'S1', "quantity": billedHours});
 
     const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
     const serv = services.map(elem => ({"salesItem": elem.itemKey, "quantity":1}))
-    serv.push({"salesItem": 'S1', "quantity": billedHours});
     var salesItems = [...comp, ...serv];
 
     request({
@@ -68,11 +68,10 @@ app.get('/quotation', (req, res) => {
                 var url = `${PRIMAVERA_BASE_URL}/sales/quotations`;
                 var body = {
                     "company": "REPAIRMASTERS",
-                    "buyerCustomerParty": "0001",
+                    "buyerCustomerParty": "INDIF",
                     "documentDate": dateTimeFormatted,
                     "documentLines": salesItems
                 };
-                console.log(body)
                 request({
                         url: url,
                         method: "POST",
@@ -92,9 +91,7 @@ app.get('/quotation', (req, res) => {
                             return;
                         }
                         if (body) {
-                            console.log(body)
                             url = `${PRIMAVERA_BASE_URL}/sales/quotations/${body}/print`;
-                            console.log(url)
                             json = JSON.parse(response.body);
                             access_token = json.access_token;
                             const filename = `ORC_${moment().unix()}.pdf`;
@@ -596,11 +593,16 @@ app.post('/email', (req, res) => {
         }
     });
 
+    var emailBody = `
+                    <p>Bom dia,</p>
+                    <p>O/a seu/sua ${emailType} pode ser consultado/a <a href="${link}">aqui</a></p>
+                    <p>Cumprimentos,</p>
+                    <p>RepairMasters.</p>`
     const mailOptions = {
         from: 'ieoprepairmasters@gmail.com',
         to: `${customerEmail}`,
         subject: `${emailType} de Reparação`,
-        text: `${link}`
+        html: `${emailBody}`
     };
 
     transporter.sendMail(mailOptions, function(error, info){
@@ -681,8 +683,8 @@ function getAccessToken(oAuth2Client, callback) {
 app.listen(PORT, function () {
     console.log("Middleware iniciado. A escutar o porto: " + PORT);
     // Inicializar a Google API, criando uma instancia do OAuth2Client
-    // fs.readFile('credentials.json', (err, content) => {
-    // 	if (err) return console.log('Error loading client secret file:', err);
-    // 	authorize(JSON.parse(content), setOAuth2Client);
-    // });
+    fs.readFile('credentials.json', (err, content) => {
+    	if (err) return console.log('Error loading client secret file:', err);
+    	authorize(JSON.parse(content), setOAuth2Client);
+    });
 })
