@@ -35,12 +35,10 @@ app.get("/", function (req, res) {
 })
 
 //METHOD:POST->Quotation (Orçamento)
-
 app.post('/quotation', (req, res) => {
     var components = req.body.components;
     var billedHours = req.body.billedHours;
     var services = req.body.services;
-    services.push({"itemKey": 'S1', "quantity": billedHours});
 
     const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
     const serv = services.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
