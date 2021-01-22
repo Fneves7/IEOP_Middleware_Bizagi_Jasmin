@@ -34,11 +34,13 @@ app.get("/", function (req, res) {
     })
 })
 
-//METHOD:GET->Quotation (Orçamento)
+//METHOD:POST->Quotation (Orçamento)
+
 app.post('/quotation', (req, res) => {
     var components = req.body.components;
-    var services = req.body.services;
     var billedHours = req.body.billedHours;
+    var services = req.body.services;
+    services.push({"itemKey": 'S1', "quantity": billedHours});
 
     const comp = components.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
     const serv = services.map(elem => ({"salesItem": elem.itemKey, "quantity": 1}))
@@ -109,16 +111,16 @@ app.post('/quotation', (req, res) => {
                                     'Upgrade-Insecure-Requests': '1',
                                 },
                             })
-                                .pipe(file)
-                                .on('finish', () => {
-                                    res.status(200).json({
-                                        link: `http://localhost:3000/files?filename=${filename}`
-                                    })
+                            .pipe(file)
+                            .on('finish', () => {
+                                res.status(200).json({
+                                    link: `http://localhost:3000/files?filename=${filename}`
                                 })
-                                .on('error', (error) => {
-                                    console.log(error);
-                                    res.status(500).json({})
-                                })
+                            })
+                            .on('error', (error) => {
+                                console.log(error);
+                                res.status(500).json({})
+                            })
                         } else {
                             res.status(400).json({
                                 status: false,
@@ -597,11 +599,16 @@ app.post('/email', (req, res) => {
         }
     });
 
+    var emailBody = `
+                    <p>Bom dia,</p>
+                    <p>O/a seu/sua ${emailType} pode ser consultado/a <a href="${link}">aqui</a></p>
+                    <p>Cumprimentos,</p>
+                    <p>RepairMasters.</p>`
     const mailOptions = {
         from: 'ieoprepairmasters@gmail.com',
         to: `${customerEmail}`,
         subject: `${emailType} de Reparação`,
-        text: `${link}`
+        html: `${emailBody}`
     };
 
     transporter.sendMail(mailOptions, function (error, info) {
@@ -683,8 +690,8 @@ app.listen(PORT, function () {
     console.clear();
     console.log("Middleware iniciado. A escutar o porto: " + PORT);
     // Inicializar a Google API, criando uma instancia do OAuth2Client
-    // fs.readFile('credentials.json', (err, content) => {
-    // 	if (err) return console.log('Error loading client secret file:', err);
-    // 	authorize(JSON.parse(content), setOAuth2Client);
-    // });
+    fs.readFile('credentials.json', (err, content) => {
+    	if (err) return console.log('Error loading client secret file:', err);
+    	authorize(JSON.parse(content), setOAuth2Client);
+    });
 })
