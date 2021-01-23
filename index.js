@@ -7,19 +7,24 @@ const { google } = require('googleapis');
 const moment = require('moment');
 const app = express();
 const PORT = 3000;
+
 //Primavera Jasmin
 //Subscription
 const user = '246568';
 const subscription = '246568-0001';
+
 //App
 const appname = 'IEOP2021';
 const secret = '8fc6bbb6-3da0-4e57-8d11-aaefd1e4db6f';
+
 //URL API Jasmin
 const PRIMAVERA_BASE_URL = `https://my.jasminsoftware.com/api/${user}/${subscription}`;
+
 //Google calendar
 const GOOGLE_SCOPES = ['https://www.googleapis.com/auth/calendar.readonly'];
 const GOOGLE_REPAIRS_CALENDAR = 'pte14c0njg915aq8hdbqi1lm98@group.calendar.google.com';
 const GOOGLE_TOKEN_PATH = 'token.json';
+
 let googleOAuth2Client;
 
 //Server
@@ -59,8 +64,6 @@ app.post('/quotation', (req, res) => {
 	},
 		(err, response) => {
 			if (response) {
-				var salesItem = req.body.itemKey;
-				var buyerCustomerParty = req.body.buyerCustomerParty;
 				//data e converter para rfc3339
 				var dateTime = new Date();
 				var dateTimeFormatted = dateTime.toISOString();
@@ -138,7 +141,11 @@ app.post('/quotation', (req, res) => {
 
 //Imprimir documentos no servidor
 app.get('/files', (req, res) => {
-	const filename = req.query.filename + ".pdf";
+	let filename = req.query.filename;
+	const arr = filename.split('.');
+	if(arr.length === 1) {
+		filename += ".pdf";
+	}
 	res.sendFile(__dirname + `/public/${filename}`);
 })
 
@@ -178,6 +185,7 @@ app.get('/pickupAvailability', (req, res) => {
 //METHOD:GETSTOCK Obter stocks de produtos
 app.post("/get_stock", function (requesto, resposta) {
 	var comp = requesto.body.components;
+
 	var filter = `ItemKey eq '${comp[0].itemKey}'`;
 	if (comp.length > 1) {
 		for (let i = 1; i < comp.length; i++) {
@@ -225,6 +233,7 @@ app.post("/get_stock", function (requesto, resposta) {
 					if (json) {
 						const semStock = json.items.filter((element) => element.materialsItemWarehouses[2].stockBalance === 0);
 						var filt = '';
+
 						if (semStock.length > 0) {
 							semStock.forEach(element => {
 								filt += `${element.itemKey} - ${element.description} sem stock! \n`;
@@ -263,7 +272,7 @@ app.post("/create_invoice", function (req, res) {
 	var services = req.body.services;
 	var billedHours = req.body.billedHours;
 
-	const comp = components.map(elem => ({ "salesItem": elem.itemKey, "quantity": 1 }))
+	const comp = components.map(elem => ({ "salesItem": elem.itemKey, "quantity": 1, "warehouse": "VIANA01"}))
 	const serv = services.map(elem => ({ "salesItem": elem.itemKey, "quantity": 1 }))
 	serv.push({ "salesItem": 'S1', "quantity": billedHours });
 	var salesItems = [...comp, ...serv];
@@ -332,16 +341,16 @@ app.post("/create_invoice", function (req, res) {
 								'Upgrade-Insecure-Requests': '1',
 							},
 						})
-							.pipe(file)
-							.on('finish', () => {
-								res.status(200).json({
-									link: `http://localhost:3000/files?filename=${filename}`
-								})
+						.pipe(file)
+						.on('finish', () => {
+							res.status(200).json({
+								link: `http://localhost:3000/files?filename=${filename}`
 							})
-							.on('error', (error) => {
-								console.log(error)
-								res.status(500).json({})
-							})
+						})
+						.on('error', (error) => {
+							console.log(error)
+							res.status(500).json({})
+						})
 					} else {
 						res.status(400).json({
 							status: false,
